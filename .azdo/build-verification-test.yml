@@ -7,16 +7,14 @@ trigger:
 - main
 - features/*
 
-
-# pool:
-#   vmImage: 'ubuntu-latest'
-pool: localMachine
-
-
 variables:
   solution: '**/*.csproj'
   buildPlatform: 'Any CPU'
   buildConfiguration: 'Release'
+  serviceConnection: 'PUC-Azure-Connection'
+  resourceGroup: 'PartsUnlimitedContoso'
+  webAppName: 'puc-webapp'
+  isMain: $[eq(variables['Build.SourceBranch'], 'refs/heads/main')]
 
 stages:
   - stage: verification
@@ -88,3 +86,62 @@ stages:
 
       - publish: $(Build.ArtifactStagingDirectory)
         artifact: WebApp
+
+  - stage: deployToTest
+    jobs:
+    - deployment: DeployToTest
+      pool:
+        vmImage: 'ubuntu-latest'
+      displayName: Deploy To Test Env
+      environment: PUC-Test
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - bash: tree
+                displayName: Where Am I
+                workingDirectory: $(Agent.BuildDirectory)
+
+              - task: AzureRmWebAppDeployment@4
+                displayName: Deploy App To Test
+                inputs:
+                  ConnectionType: "AzureRM"
+                  azureSubscription: $(serviceConnection)
+                  appType: "webAppLinux"
+                  WebAppName: $(webAppName)
+                  deployToSlotOrASE: true
+                  ResourceGroupName: $(resourceGroup)
+                  SlotName: "devtest"
+                  packageForLinux: "$(Agent.BuildDirectory)/WebApp/web.zip"
+
+  - stage: deployToProd
+    condition: and(succeeded(), eq(variables.isMain, 'true'))
+    dependsOn: deployToTest
+    jobs:
+      - deployment: webDeployToProd
+        pool:
+          vmImage: 'ubuntu-latest'
+        displayName: Deploy To Prod Env
+        environment: PUC-Production
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureRmWebAppDeployment@4
+                  displayName: Deploy App To Test
+                  inputs:
+                    ConnectionType: "AzureRM"
+                    azureSubscription: $(serviceConnection)
+                    appType: "webAppLinux"
+                    WebAppName: $(webAppName)
+                    deployToSlotOrASE: true
+                    ResourceGroupName: $(resourceGroup)
+                    SlotName: "staging"
+                    packageForLinux: "$(Agent.BuildDirectory)/WebApp/web.zip"
+                - task: AzureAppServiceManage@0
+                  inputs:
+                    azureSubscription: $(serviceConnection)
+                    WebAppName: $(webAppName)
+                    SwapWithProduction: true
+                    resourceGroupName: $(resourceGroup)
+                    Slot: "staging"
