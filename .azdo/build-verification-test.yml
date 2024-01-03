@@ -141,7 +141,8 @@ stages:
                 - task: AzureAppServiceManage@0
                   inputs:
                     azureSubscription: $(serviceConnection)
-                    WebAppName: $(webAppName)
-                    SwapWithProduction: true
                     resourceGroupName: $(resourceGroup)
-                    Slot: "staging"
+                    WebAppName: $(webAppName)
+                    Action: 'Swap Slots'
+                    SourceSlot: 'staging'
+                    SwapWithProduction: true
